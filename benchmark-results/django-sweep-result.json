@@ -1,0 +1,63 @@
+{
+  "mode": "sweep",
+  "output_stack": "django",
+  "levels": [
+    100
+  ],
+  "runs": [
+    {
+      "target": "http://127.0.0.1:8000/chat",
+      "load": {
+        "concurrency": 100,
+        "requests": 1000,
+        "sleep_ms": 20000
+      },
+      "results": {
+        "wall_s": 201.185423,
+        "total_requests": 1000,
+        "ok": 1000,
+        "fail": 0,
+        "requests_per_second": 4.9705,
+        "latency_s": {
+          "min": 20.002295,
+          "p50": 20.013643,
+          "p95": 20.343715,
+          "max": 21.033799
+        },
+        "server_thread_count": {
+          "min": 2,
+          "max": 103,
+          "mean": 95.911
+        },
+        "distinct_server_pids": 1,
+        "server_observed": {
+          "sample_count": 1000,
+          "distinct_server_pids_in_samples": 1,
+          "rss_bytes": {
+            "min": 180985856.0,
+            "max": 182980608.0,
+            "mean": 182847111.168
+          },
+          "rss_human": {
+            "min": "172.60 MiB",
+            "max": "174.50 MiB",
+            "mean": "174.38 MiB",
+            "peak_seen": "174.50 MiB"
+          },
+          "mem_percent_of_host": {
+            "min": 2.203,
+            "max": 2.227,
+            "mean": 2.2251
+          },
+          "mem_percent_display_at_peak_rss": "2.2% of host RAM",
+          "cpu_times_total_s_observed": {
+            "min": 7.14,
+            "max": 10.07
+          },
+          "cpu_time_delta_s_approx": 2.93
+        }
+      },
+      "errors": []
+    }
+  ]
+}
