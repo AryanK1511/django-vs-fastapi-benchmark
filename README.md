@@ -9,6 +9,29 @@ uv sync
 cd django-app && uv run python manage.py migrate
 ```
 
+## Run with Docker
+
+From the repo root, build and start both apps (Django on **8000**, FastAPI on **8001**):
+
+```bash
+docker compose up --build
+```
+
+If you use the standalone Compose binary:
+
+```bash
+docker-compose up --build
+```
+
+- **Django** (Daphne + DRF): `POST http://127.0.0.1:8000/chat/` — same JSON body as below.
+- **FastAPI** (Uvicorn): `POST http://127.0.0.1:8001/chat`
+
+[`docker-compose.yml`](docker-compose.yml) caps each service at **4 CPUs** and **1024Mi** memory. Images build from [`django-app/Dockerfile`](django-app/Dockerfile) and [`fastapi-app/Dockerfile`](fastapi-app/Dockerfile) with the repo root as context (shared `pyproject.toml`, `uv.lock`, and `eval/`). The Django container runs `migrate` before Daphne starts.
+
+Stop with Ctrl+C, then `docker compose down` (or `docker-compose down`) if you want containers removed.
+
+To run **`bench`** against these URLs, use a local env (`uv sync` from the repo root). Result JSON is still written under **`benchmark-results/`** on your host, same paths as in the table below.
+
 ## Run Django (Daphne + DRF)
 
 ```bash

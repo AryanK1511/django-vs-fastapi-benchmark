@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+
+logging.basicConfig(level=logging.INFO)
 import threading
 import time
 import uuid

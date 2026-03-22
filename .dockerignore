@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.pyc
+.vscode
+benchmark-results/
+django-app/db.sqlite3
