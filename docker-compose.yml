@@ -4,21 +4,21 @@ services:
       context: .
       dockerfile: django-app/Dockerfile
     ports:
-      - "8000:8000"
+      - '8000:8000'
     deploy:
       resources:
         limits:
-          cpus: "4"
-          memory: 1024M
+          cpus: '1'
+          memory: 512M
 
   fastapi:
     build:
       context: .
       dockerfile: fastapi-app/Dockerfile
     ports:
-      - "8001:8001"
+      - '8001:8001'
     deploy:
       resources:
         limits:
-          cpus: "4"
-          memory: 1024M
+          cpus: '1'
+          memory: 512M

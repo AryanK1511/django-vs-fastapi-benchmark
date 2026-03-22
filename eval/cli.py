@@ -7,15 +7,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-import psutil
 import typer
 
-from eval.human_format import (
-    bytes_human,
-    host_cpu_sentence,
-    host_memory_sentence,
-    percent_of_host,
-)
+from eval.human_format import bytes_human, percent_of_host
 
 cli = typer.Typer()
 
@@ -43,9 +37,8 @@ def _resolve_stack(target: str, stack: str | None) -> str:
     return _infer_stack_from_target(target)
 
 
-def _default_result_path(stack: str, sweep: bool) -> Path:
-    kind = "sweep" if sweep else "run"
-    return BENCHMARK_RESULTS_DIR / f"{stack}-{kind}-result.json"
+def _default_result_path(stack: str) -> Path:
+    return BENCHMARK_RESULTS_DIR / f"{stack}-sweep-result.json"
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -97,10 +90,7 @@ def _num_stats(vals: list[float]) -> dict[str, float]:
     }
 
 
-def _aggregate_server_from_responses(
-    rows: list[dict[str, Any]],
-    thread_max: int | None,
-) -> dict[str, Any] | None:
+def _aggregate_server_from_responses(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not rows:
         return None
     rss = [int(r["rss"]) for r in rows]
@@ -134,43 +124,8 @@ def _aggregate_server_from_responses(
         "cpu_time_delta_s_approx": round(cpu_delta, 4)
         if cpu_delta is not None
         else None,
-        "cpu_time_delta_human": (
-            f"Server process consumed about {cpu_delta:.2f} s of CPU (user+system) "
-            f"between the lowest and highest cumulative samples in this benchmark "
-            f"(same PID only)."
-            if cpu_delta is not None
-            else (
-                "CPU delta needs at least two successful responses from the same server PID."
-            )
-        ),
-        "deck_line_rss_threads": (
-            f"Under this load, server RSS peaked around {bytes_human(peak_rss)}"
-            + (
-                f" with up to {thread_max} Python threads alive (from responses)."
-                if thread_max is not None
-                else "."
-            )
-        ),
     }
     return out
-
-
-def _system_snapshot() -> dict[str, Any]:
-    vm = psutil.virtual_memory()
-    cpu_pct = psutil.cpu_percent(interval=0.1)
-    return {
-        "memory_total_bytes": vm.total,
-        "memory_available_bytes": vm.available,
-        "memory_used_percent": vm.percent,
-        "cpu_percent": cpu_pct,
-        "memory_total_human": bytes_human(int(vm.total)),
-        "memory_available_human": bytes_human(int(vm.available)),
-        "memory_used_percent_display": f"{vm.percent:.1f}% of host RAM in use (all processes)",
-        "summary_host_memory": host_memory_sentence(
-            int(vm.total), int(vm.available), float(vm.percent)
-        ),
-        "summary_host_cpu": host_cpu_sentence(float(cpu_pct)),
-    }
 
 
 async def _run_load(
@@ -247,39 +202,7 @@ async def _run_load(
     return wall_s, latencies_ok, errors, threads_samples, pids, server_rows
 
 
-def _human_summary_lines(
-    thread_stats: dict[str, Any],
-    server_agg: dict[str, Any] | None,
-    system: dict[str, Any],
-    ok: int,
-    fail: int,
-) -> list[str]:
-    lines: list[str] = []
-    lines.append(
-        f"Requests: {ok} succeeded, {fail} failed. "
-        f"Thread count in API responses (min / max / mean): "
-        f"{thread_stats.get('min')} / {thread_stats.get('max')} / {thread_stats.get('mean')}."
-    )
-    lines.append(system.get("summary_host_memory", ""))
-    lines.append(system.get("summary_host_cpu", ""))
-    if server_agg:
-        lines.append(server_agg.get("deck_line_rss_threads", ""))
-        lines.append(server_agg.get("cpu_time_delta_human", ""))
-    else:
-        lines.append(
-            "No per-response server metrics (upgrade API or fix errors). "
-            "You can still watch the server with: "
-            "ps -o pid,rss,vsz,%mem,%cpu -p <daphne_or_uvicorn_pid>"
-        )
-    lines.append(
-        "Replace time.sleep with real LLM + streaming: thread counts stay comparable, "
-        "but sockets and buffers weigh more; async tends to scale that part more cheaply."
-    )
-    return [ln for ln in lines if ln]
-
-
-def _build_run_report(
-    mode: str,
+def _build_sweep_step_report(
     target: str,
     concurrency: int,
     total_requests: int,
@@ -290,7 +213,6 @@ def _build_run_report(
     threads_samples: list[int],
     pids: list[int],
     server_rows: list[dict[str, Any]],
-    system_after: dict[str, Any],
     error_limit: int = 25,
 ) -> dict[str, Any]:
     ok = len(latencies_ok)
@@ -300,11 +222,8 @@ def _build_run_report(
     if len(errors) > error_limit:
         err_out = err_out + [f"... and {len(errors) - error_limit} more"]
     th_stats = _thread_stats(threads_samples)
-    th_max = th_stats.get("max")
-    th_max_i = int(th_max) if isinstance(th_max, int) else None
-    server_agg = _aggregate_server_from_responses(server_rows, th_max_i)
+    server_agg = _aggregate_server_from_responses(server_rows)
     return {
-        "mode": mode,
         "target": target,
         "load": {
             "concurrency": concurrency,
@@ -322,63 +241,8 @@ def _build_run_report(
             "distinct_server_pids": len(set(pids)) if pids else 0,
             "server_observed": server_agg,
         },
-        "system": system_after,
-        "human_summary": _human_summary_lines(
-            th_stats, server_agg, system_after, ok, fail
-        ),
         "errors": err_out,
     }
-
-
-@cli.command("run")
-def cmd_run(
-    target: str = typer.Option(
-        ..., "--target", "-t", help="Full URL, e.g. http://127.0.0.1:8000/chat/"
-    ),
-    concurrency: int = typer.Option(10, "--concurrency", "-c"),
-    requests: int = typer.Option(100, "--requests", "-n"),
-    sleep_ms: int = typer.Option(200, "--sleep-ms", "-s"),
-    timeout: float = typer.Option(120.0, "--timeout"),
-    stack: str | None = typer.Option(
-        None,
-        "--stack",
-        help="django or fastapi; default: infer from URL (ports 8000/8001 or /chat/ vs /chat).",
-    ),
-    output: Path | None = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Override output path (default: benchmark-results/<stack>-run-result.json).",
-    ),
-) -> None:
-    psutil.cpu_percent(interval=0.1)
-    wall_s, lat_ok, errs, threads_samples, pids, server_rows = asyncio.run(
-        _run_load(target, concurrency, requests, sleep_ms, timeout)
-    )
-    system_after = _system_snapshot()
-    report = _build_run_report(
-        "run",
-        target,
-        concurrency,
-        requests,
-        sleep_ms,
-        wall_s,
-        lat_ok,
-        errs,
-        threads_samples,
-        pids,
-        server_rows,
-        system_after,
-    )
-    resolved_stack = _resolve_stack(target, stack)
-    out = (
-        output
-        if output is not None
-        else _default_result_path(resolved_stack, sweep=False)
-    )
-    report["output_stack"] = resolved_stack
-    _write_json(out, report)
-    typer.echo(str(out.resolve()))
 
 
 @cli.command("sweep")
@@ -396,7 +260,7 @@ def cmd_sweep(
     stack: str | None = typer.Option(
         None,
         "--stack",
-        help="django or fastapi; default: infer from URL (ports 8000/8001 or /chat/ vs /chat).",
+        help="django or fastapi; default: infer from URL port (8000 django, 8001 fastapi).",
     ),
     output: Path | None = typer.Option(
         None,
@@ -406,16 +270,13 @@ def cmd_sweep(
     ),
 ) -> None:
     conc_levels = [int(x.strip()) for x in levels.split(",") if x.strip()]
-    psutil.cpu_percent(interval=0.1)
     runs: list[dict[str, Any]] = []
     for c in conc_levels:
         wall_s, lat_ok, errs, threads_samples, pids, server_rows = asyncio.run(
             _run_load(target, c, requests, sleep_ms, timeout)
         )
-        system_after = _system_snapshot()
         runs.append(
-            _build_run_report(
-                "sweep",
+            _build_sweep_step_report(
                 target,
                 c,
                 requests,
@@ -426,23 +287,15 @@ def cmd_sweep(
                 threads_samples,
                 pids,
                 server_rows,
-                system_after,
             )
         )
     resolved_stack = _resolve_stack(target, stack)
-    out = (
-        output
-        if output is not None
-        else _default_result_path(resolved_stack, sweep=True)
-    )
+    out = output if output is not None else _default_result_path(resolved_stack)
     payload = {
         "mode": "sweep",
         "output_stack": resolved_stack,
         "levels": conc_levels,
         "runs": runs,
-        "human_summary": [
-            f"Sweep across concurrency {conc_levels}; see each run.human_summary."
-        ],
     }
     _write_json(out, payload)
     typer.echo(str(out.resolve()))
