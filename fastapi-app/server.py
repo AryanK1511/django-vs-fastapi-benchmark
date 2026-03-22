@@ -1,16 +1,17 @@
 import asyncio
 import logging
 import os
-
-logging.basicConfig(level=logging.INFO)
 import threading
 import time
 import uuid
 
 import psutil
-from eval.human_format import bytes_human, percent_of_host
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
+
+from eval.util import bytes_human, percent_of_host
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 logger = logging.getLogger(__name__)
@@ -22,28 +23,42 @@ class ChatBody(BaseModel):
 
 @app.post("/chat")
 async def chat(body: ChatBody):
+    # Generate a unique request ID for the current request
     request_id = str(uuid.uuid4())
+
     logger.info(
         "chat start request_id=%s sleep_ms=%s pid=%s",
         request_id,
         body.sleep_ms,
         os.getpid(),
     )
+
+    # Use the sleep_ms from the request body to sleep for the specified duration
     sleep_s = body.sleep_ms / 1000.0
+
+    # Measure the time it takes to sleep for the specified duration
+    # The elapsed time should be very close to sleep_s, but under load with thread contention it might drift
     t0 = time.perf_counter()
     await asyncio.sleep(sleep_s)
     elapsed = time.perf_counter() - t0
+
+    # Thread info
     all_threads = threading.enumerate()
     thread_count = threading.active_count()
     thread_names = [t.name for t in all_threads]
+
+    # Memory info
     proc = psutil.Process()
     mi = proc.memory_info()
     rss = int(mi.rss)
     mem_pct = proc.memory_percent()
+
+    # CPU info
     ct = proc.cpu_times()
     cpu_u = float(ct.user)
     cpu_sys = float(ct.system)
     cpu_tot = cpu_u + cpu_sys
+
     logger.info(
         "chat done request_id=%s elapsed_s=%s thread_count=%s rss_human=%s",
         request_id,
@@ -51,6 +66,7 @@ async def chat(body: ChatBody):
         thread_count,
         bytes_human(rss),
     )
+
     return {
         "framework": "fastapi",
         "request_id": request_id,
@@ -70,9 +86,5 @@ async def chat(body: ChatBody):
                 "system": round(cpu_sys, 4),
                 "total": round(cpu_tot, 4),
             },
-            "cpu_times_human": (
-                "Cumulative user+system CPU seconds for this server process since it started "
-                "(subtract min from max across benchmark responses to approximate CPU used during the run)"
-            ),
         },
     }

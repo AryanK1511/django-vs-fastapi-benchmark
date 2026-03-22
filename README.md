@@ -28,7 +28,7 @@ docker-compose up --build
 - **Django** (Daphne + DRF): `POST http://127.0.0.1:8000/chat/` — same JSON body as below.
 - **FastAPI** (Uvicorn): `POST http://127.0.0.1:8001/chat`
 
-[`docker-compose.yml`](docker-compose.yml) caps each service at **1 CPU** and **512Mi** memory. Images build from [`django-app/Dockerfile`](django-app/Dockerfile) and [`fastapi-app/Dockerfile`](fastapi-app/Dockerfile) with the repo root as context (shared `pyproject.toml`, `uv.lock`, and `eval/`). The Django container runs `migrate` before Daphne starts.
+[`docker-compose.yml`](docker-compose.yml) caps each service at **0.5 CPU** and **512Mi** memory. Images build from [`django-app/Dockerfile`](django-app/Dockerfile) and [`fastapi-app/Dockerfile`](fastapi-app/Dockerfile) with the repo root as context (shared `pyproject.toml`, `uv.lock`, and `eval/`). The Django container runs `migrate` before Daphne starts.
 
 Stop with Ctrl+C, then `docker compose down` (or `docker-compose down`) if you want containers removed.
 
@@ -89,6 +89,19 @@ uv run bench --target http://127.0.0.1:8001/chat --levels 500,1000 --requests 10
 ```
 
 Each API response also includes `thread_count`, `thread_names`, `thread_name`, and `pid`.
+
+## Results dashboard
+
+After you have sweep JSON for both stacks (same default paths as in the table above), open the dashboard in [`results-dashboard/`](results-dashboard/). It loads `benchmark-results/django-sweep-result.json` and `benchmark-results/fastapi-sweep-result.json` from the repo root and charts overlapping concurrency levels only.
+
+From the repo root, install the optional **dashboard** dependency group and run:
+
+```bash
+uv sync --group dashboard
+uv run --group dashboard streamlit run results-dashboard/app.py
+```
+
+The process prints a local URL in the terminal (often `http://127.0.0.1:8501`). Stop it with Ctrl+C.
 
 ## Author
 
